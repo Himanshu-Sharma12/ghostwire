@@ -2,20 +2,24 @@
 Synthesizes a typed, zero-dependency TypeScript client using native fetch.
 """
 
+import json
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Set
 from ..core.models import AuthInfo, EndpointModel
+from .naming import path_segments, ts_comment_text, typescript_identifier
+from .python_sdk import is_graphql_body
 
 
-def snake_to_camel(snake_str: str) -> str:
-    """Converts snake_case to camelCase."""
-    components = snake_str.split("_")
-    return components[0] + "".join(x.title() for x in components[1:])
+def ts_template_text(text: str) -> str:
+    """Escapes static text for embedding in a generated template literal."""
+    return text.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
 
 
 class TypeScriptSdkGenerator:
-    def __init__(self, client_class_name: str = "ApiClient"):
+    def __init__(self, client_class_name: str = "ApiClient", embed_secrets: bool = False):
+        """embed_secrets writes the captured credential into the generated code as a default value."""
         self.client_class_name = client_class_name
+        self.embed_secrets = embed_secrets
 
     def generate_code(self, endpoints: List[EndpointModel], auth: Optional[AuthInfo] = None) -> str:
         """Generates the TypeScript SDK client source code."""
@@ -29,8 +33,8 @@ class TypeScriptSdkGenerator:
             "",
             "export interface ClientConfig {",
             "  baseUrl?: string;",
-            "  token?: string;",
-            "  apiKey?: string;",
+            "  /** Bearer token, API key, session cookie value or raw Authorization header, depending on the API */",
+            "  authToken?: string;",
             "  headers?: Record<string, string>;",
             "}",
             "",
@@ -39,35 +43,38 @@ class TypeScriptSdkGenerator:
             "  private headers: Record<string, string>;",
             "",
             "  constructor(config: ClientConfig = {}) {",
-            f'    this.baseUrl = (config.baseUrl || "{base_url}").replace(/\\/+$/, "");',
+            f'    this.baseUrl = (config.baseUrl || {json.dumps(base_url)}).replace(/\\/+$/, "");',
             "    this.headers = {",
-            '      "Content-Type": "application/json",',
             '      "Accept": "application/json",',
             "      ...(config.headers || {}),",
             "    };",
         ]
 
-        if auth and auth.auth_type == "bearer":
+        if auth and auth.auth_type in {"bearer", "basic", "custom", "api_key", "cookie"}:
+            fallback = json.dumps(auth.token_value) if (self.embed_secrets and auth.token_value) else "undefined"
             lines.extend([
-                f'    const token = config.token || "{auth.token_value or ""}";',
-                "    if (token) {",
-                '      this.headers["Authorization"] = `Bearer ${token}`;',
-                "    }",
+                f"    const authToken = config.authToken ?? {fallback};",
+                "    if (authToken) {",
             ])
-        elif auth and auth.auth_type == "api_key":
-            h_name = auth.header_name or "x-api-key"
-            lines.extend([
-                f'    const apiKey = config.apiKey || "{auth.token_value or ""}";',
-                "    if (apiKey) {",
-                f'      this.headers["{h_name}"] = apiKey;',
-                "    }",
-            ])
+            if auth.auth_type == "bearer":
+                lines.append('      this.headers["Authorization"] = `Bearer ${authToken}`;')
+            elif auth.auth_type == "basic":
+                lines.append('      this.headers["Authorization"] = `Basic ${authToken}`;')
+            elif auth.auth_type == "custom":
+                lines.append('      this.headers["Authorization"] = authToken;')
+            elif auth.auth_type == "api_key":
+                lines.append(f'      this.headers[{json.dumps(auth.header_name or "x-api-key")}] = authToken;')
+            else:
+                cookie_name = auth.cookie_name or "session"
+                lines.append(f'      this.headers["Cookie"] = {json.dumps(cookie_name + "=")} + authToken;')
+            lines.append("    }")
 
         lines.extend([
             "  }",
             "",
             "  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {",
-            "    const url = `${this.baseUrl}${path}`;",
+            "    // Endpoints captured on another host are generated with absolute URLs",
+            "    const url = /^https?:\\/\\//.test(path) ? path : `${this.baseUrl}${path}`;",
             "    const response = await fetch(url, {",
             "      ...options,",
             "      headers: {",
@@ -94,60 +101,101 @@ class TypeScriptSdkGenerator:
             "",
         ])
 
-        seen_ops = set()
+        if any(ep.graphql_batch for ep in endpoints):
+            lines.extend([
+                "  /** Unwraps the single operation's result from a batched GraphQL response. */",
+                "  private batchResult(result: any): any {",
+                "    const item = Array.isArray(result) && result.length > 0 ? result[0] : result;",
+                '    return item && typeof item === "object" && "index" in item && "result" in item ? item.result : item;',
+                "  }",
+                "",
+            ])
+
+        method_names: Set[str] = set()
         for ep in endpoints:
-            op_camel = snake_to_camel(ep.operation_id)
-            if op_camel in seen_ops:
-                counter = 1
-                while f"{op_camel}{counter}" in seen_ops:
-                    counter += 1
-                op_camel = f"{op_camel}{counter}"
-            seen_ops.add(op_camel)
-
-            path_params = [p for p in ep.parameters if p.location == "path"]
-            query_params = [p for p in ep.parameters if p.location == "query"]
-
-            args = []
-            for p in path_params:
-                ts_name = snake_to_camel(p.name)
-                args.append(f"{ts_name}: string | number")
-
-            if ep.request_body:
-                args.append("payload?: Record<string, any>")
-
-            if query_params:
-                args.append("params?: Record<string, any>")
-
-            lines.append(f"  /**")
-            lines.append(f"   * {ep.summary}")
-            lines.append(f"   * {ep.method} {ep.path}")
-            lines.append(f"   */")
-            lines.append(f"  async {op_camel}({', '.join(args)}): Promise<any> {{")
-
-            path_expr = ep.path
-            for p in path_params:
-                ts_name = snake_to_camel(p.name)
-                path_expr = path_expr.replace(f"{{{p.name}}}", f"${{{ts_name}}}")
-
-            lines.append(f"    let endpoint = `{path_expr}`;")
-            if query_params:
-                lines.extend([
-                    "    if (params && Object.keys(params).length > 0) {",
-                    "      const qs = new URLSearchParams(params as any).toString();",
-                    "      endpoint += `?${qs}`;",
-                    "    }",
-                ])
-
-            req_opts = [f'method: "{ep.method.upper()}"']
-            if ep.request_body:
-                req_opts.append("body: payload ? JSON.stringify(payload) : undefined")
-
-            lines.append(f"    return this.request(endpoint, {{ {', '.join(req_opts)} }});")
-            lines.append("  }")
-            lines.append("")
+            lines.extend(self._method_lines(ep, method_names, base_url))
 
         lines.append("}")
         return "\n".join(lines)
+
+    def _method_lines(self, ep: EndpointModel, method_names: Set[str], default_base_url: str) -> List[str]:
+        op_camel = typescript_identifier(ep.operation_id, method_names)
+        path_params = [p for p in ep.parameters if p.location == "path"]
+        query_params = [p for p in ep.parameters if p.location == "query"]
+        graphql = is_graphql_body(ep)
+
+        arg_names: Set[str] = set()
+        ts_names: Dict[str, str] = {}
+        args = []
+        for p in path_params:
+            ts_names[p.name] = typescript_identifier(p.name, arg_names)
+            args.append(f"{ts_names[p.name]}: string | number")
+        if graphql:
+            args.append("variables?: Record<string, any>")
+        elif ep.request_body:
+            args.append("payload?: string" if ep.request_body.encoding == "text" else "payload?: Record<string, any>")
+        if query_params:
+            args.append("params?: Record<string, any>")
+
+        doc_path = f"{ep.path} ({ep.graphql_operation})" if ep.graphql_operation else ep.path
+        lines = [
+            "  /**",
+            f"   * {ts_comment_text(ep.summary)}",
+            f"   * {ep.method} {ts_comment_text(doc_path)}",
+            "   */",
+            f"  async {op_camel}({', '.join(args)}): Promise<any> {{",
+        ]
+
+        parts = []
+        for segment in path_segments(ep.path):
+            if segment.startswith("{") and segment[1:-1] in ts_names:
+                parts.append(f"${{encodeURIComponent(String({ts_names[segment[1:-1]]}))}}")
+            else:
+                parts.append(ts_template_text(segment))
+        host_prefix = "" if ep.base_url == default_base_url else ts_template_text(ep.base_url)
+        lines.append(f"    let endpoint = `{host_prefix}{''.join(parts)}`;")
+        if query_params:
+            lines.extend([
+                "    if (params && Object.keys(params).length > 0) {",
+                "      const qs = new URLSearchParams(params as any).toString();",
+                "      endpoint += `?${qs}`;",
+                "    }",
+            ])
+
+        req_opts = [f"method: {json.dumps(ep.method.upper())}"]
+        json_headers = 'headers: { "Content-Type": "application/json" }'
+        if graphql:
+            document = {k: v for k, v in ep.request_body.example_payload.items() if k != "variables"}
+            operation = f"{{ ...{json.dumps(document)}, variables: variables ?? {{}} }}"
+            # Batched transports expect a list of operations, even for a single one
+            req_opts.append(f"body: JSON.stringify([{operation}])" if ep.graphql_batch else f"body: JSON.stringify({operation})")
+            req_opts.append(json_headers)
+        elif ep.request_body:
+            encoding = ep.request_body.encoding
+            if encoding == "form":
+                # fetch sets the urlencoded Content-Type itself
+                req_opts.append("body: payload ? new URLSearchParams(payload as Record<string, string>) : undefined")
+            elif encoding == "multipart":
+                # fetch sets the multipart boundary itself
+                req_opts.append(
+                    "body: payload ? Object.entries(payload).reduce((form, [k, v]) => "
+                    "{ form.append(k, String(v)); return form; }, new FormData()) : undefined"
+                )
+            elif encoding == "text":
+                req_opts.append("body: payload")
+                req_opts.append(f"headers: {{ \"Content-Type\": {json.dumps(ep.request_body.content_type)} }}")
+            else:
+                req_opts.append("body: payload ? JSON.stringify(payload) : undefined")
+                req_opts.append(json_headers)
+
+        call = f"this.request(endpoint, {{ {', '.join(req_opts)} }})"
+        if graphql and ep.graphql_batch:
+            lines.append(f"    return this.batchResult(await {call});")
+        else:
+            lines.append(f"    return {call};")
+        lines.append("  }")
+        lines.append("")
+        return lines
 
     def export_file(self, endpoints: List[EndpointModel], auth: Optional[AuthInfo], 
                     output_dir: Path) -> Path:

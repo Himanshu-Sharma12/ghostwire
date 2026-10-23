@@ -7,12 +7,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from ..core.models import AuthInfo, EndpointModel
+from ..core.models import AuthInfo, EndpointModel, RequestSchema
 
 
 class PostmanCollectionGenerator:
-    def __init__(self, collection_name: str = "GhostWire Discovered API"):
+    def __init__(self, collection_name: str = "GhostWire Discovered API", embed_secrets: bool = False):
+        """
+        Credentials are referenced through the {{authToken}} collection variable. Its value is left
+        empty unless embed_secrets is set, so the collection can be shared safely.
+        """
         self.collection_name = collection_name
+        self.embed_secrets = embed_secrets
 
     def generate_collection(self, endpoints: List[EndpointModel], auth: Optional[AuthInfo] = None) -> Dict[str, Any]:
         """Synthesizes a Postman Collection v2.1.0 dictionary."""
@@ -26,11 +31,15 @@ class PostmanCollectionGenerator:
         }
 
         # Global Auth
+        if auth and auth.auth_type in {"bearer", "basic", "custom", "api_key", "cookie"}:
+            token_value = (auth.token_value or "") if self.embed_secrets else ""
+            collection["variable"] = [{"key": "authToken", "value": token_value, "type": "string"}]
+
         if auth and auth.auth_type == "bearer":
             collection["auth"] = {
                 "type": "bearer",
                 "bearer": [
-                    {"key": "token", "value": auth.token_value or "", "type": "string"}
+                    {"key": "token", "value": "{{authToken}}", "type": "string"}
                 ]
             }
         elif auth and auth.auth_type == "api_key":
@@ -38,10 +47,19 @@ class PostmanCollectionGenerator:
                 "type": "apikey",
                 "apikey": [
                     {"key": "key", "value": auth.header_name or "x-api-key", "type": "string"},
-                    {"key": "value", "value": auth.token_value or "", "type": "string"},
+                    {"key": "value", "value": "{{authToken}}", "type": "string"},
                     {"key": "where", "value": "header", "type": "string"}
                 ]
             }
+
+        # Basic, custom and cookie credentials are sent as raw headers on every request
+        auth_header = None
+        if auth and auth.auth_type == "basic":
+            auth_header = {"key": "Authorization", "value": "Basic {{authToken}}", "type": "text"}
+        elif auth and auth.auth_type == "custom":
+            auth_header = {"key": "Authorization", "value": "{{authToken}}", "type": "text"}
+        elif auth and auth.auth_type == "cookie":
+            auth_header = {"key": "Cookie", "value": f"{auth.cookie_name or 'session'}={{{{authToken}}}}", "type": "text"}
 
         # Build items
         for ep in endpoints:
@@ -50,7 +68,15 @@ class PostmanCollectionGenerator:
             host = host_parts[0].split(".")
             port = host_parts[1] if len(host_parts) > 1 else None
 
-            path_segments = [s for s in ep.path.split("/") if s]
+            # Postman marks path variables as :name
+            path_segments = [
+                f":{s[1:-1]}" if s.startswith("{") and s.endswith("}") else s
+                for s in ep.path.split("/") if s
+            ]
+            path_variables = [
+                {"key": p.name, "value": str(p.example or ""), "description": p.description or ""}
+                for p in ep.parameters if p.location == "path"
+            ]
 
             # Query params
             query_items = []
@@ -64,13 +90,15 @@ class PostmanCollectionGenerator:
 
             # URL object
             url_obj: Dict[str, Any] = {
-                "raw": f"{ep.base_url}{ep.path}",
+                "raw": f"{ep.base_url}/{'/'.join(path_segments)}",
                 "protocol": parsed.scheme or "https",
                 "host": host,
                 "path": path_segments,
             }
             if port:
                 url_obj["port"] = port
+            if path_variables:
+                url_obj["variable"] = path_variables
             if query_items:
                 url_obj["query"] = query_items
 
@@ -82,28 +110,41 @@ class PostmanCollectionGenerator:
                 "url": url_obj,
                 "description": ep.description or ep.summary
             }
+            if auth_header:
+                request_obj["header"].append(dict(auth_header))
 
             # Body
             if ep.request_body and ep.request_body.example_payload is not None:
-                request_obj["header"].append(
-                    {"key": "Content-Type", "value": "application/json", "type": "text"}
-                )
-                request_obj["body"] = {
-                    "mode": "raw",
-                    "raw": json.dumps(ep.request_body.example_payload, indent=2),
-                    "options": {
-                        "raw": {"language": "json"}
-                    }
-                }
+                request_obj["body"] = self._body(ep.request_body, ep.wire_payload())
+                if ep.request_body.encoding in {"json", "text"}:
+                    content_type = "application/json" if ep.request_body.encoding == "json" else ep.request_body.content_type
+                    request_obj["header"].append({"key": "Content-Type", "value": content_type, "type": "text"})
 
+            name = ep.summary or ep.operation_id
+            if ep.graphql_operation:
+                name = f"GraphQL {ep.graphql_operation}"
             item = {
-                "name": ep.summary or ep.operation_id,
+                "name": name,
                 "request": request_obj,
                 "response": []
             }
             collection["item"].append(item)
 
         return collection
+
+    @staticmethod
+    def _body(request_body: RequestSchema, payload: Any) -> Dict[str, Any]:
+        encoding = request_body.encoding
+        if encoding in {"form", "multipart"} and isinstance(payload, dict):
+            mode = "urlencoded" if encoding == "form" else "formdata"
+            fields = []
+            for key, value in payload.items():
+                for item in value if isinstance(value, list) else [value]:
+                    fields.append({"key": key, "value": "" if item is None else str(item), "type": "text"})
+            return {"mode": mode, mode: fields}
+        if isinstance(payload, str):
+            return {"mode": "raw", "raw": payload}
+        return {"mode": "raw", "raw": json.dumps(payload, indent=2), "options": {"raw": {"language": "json"}}}
 
     def export_file(self, endpoints: List[EndpointModel], auth: Optional[AuthInfo], output_dir: Path) -> Path:
         """Exports the collection to postman_collection.json."""

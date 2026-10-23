@@ -1,6 +1,5 @@
 """Core data models for GhostWire."""
 
-from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
@@ -27,6 +26,18 @@ class RequestSchema(BaseModel):
     schema_dict: Dict[str, Any] = Field(default_factory=dict)
     example_payload: Optional[Any] = None
 
+    @property
+    def encoding(self) -> str:
+        """How the body goes on the wire: 'json', 'form' (urlencoded), 'multipart' or 'text' (raw string)."""
+        content_type = (self.content_type or "").lower()
+        if "x-www-form-urlencoded" in content_type:
+            return "form"
+        if "multipart/form-data" in content_type:
+            return "multipart"
+        if isinstance(self.example_payload, str) and "json" not in content_type:
+            return "text"
+        return "json"
+
 
 class ResponseSchema(BaseModel):
     status_code: int = 200
@@ -48,6 +59,15 @@ class EndpointModel(BaseModel):
     responses: Dict[int, ResponseSchema] = Field(default_factory=dict)
     auth: Optional[AuthInfo] = None
     frequency: int = 1
+    graphql_operation: Optional[str] = None
+    # Batched GraphQL transport: None, "plain" (response is a list of results) or
+    # "indexed" (response is a list of {"index": i, "result": ...})
+    graphql_batch: Optional[str] = None
+
+    def wire_payload(self) -> Any:
+        """The captured example body exactly as it is sent on the wire (batched operations are wrapped in a list)."""
+        payload = self.request_body.example_payload if self.request_body else None
+        return [payload] if self.graphql_batch and payload is not None else payload
 
 
 class CapturedTransaction(BaseModel):
@@ -62,3 +82,4 @@ class CapturedTransaction(BaseModel):
     response_content_type: Optional[str] = None
     query_params: Dict[str, List[str]] = Field(default_factory=dict)
     time_ms: float = 0.0
+    graphql_batch: Optional[str] = None

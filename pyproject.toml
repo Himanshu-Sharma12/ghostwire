@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ghostwire"
-version = "0.1.0"
-description = "Autonomous Reverse-Engineering Agent for Hidden APIs & Web Traffic"
+name = "ghostwire-cli"
+version = "0.2.0"
+description = "Turn browser traffic (HAR) into OpenAPI specs, typed Python & TypeScript SDKs, mock servers and Postman collections"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 authors = [
-    { name = "GhostWire Community" }
+    { name = "Himanshu Sharma" }
 ]
 keywords = [
     "reverse-engineering",
@@ -18,13 +18,16 @@ keywords = [
     "har",
     "openapi",
     "sdk-generator",
-    "ai-agent",
+    "postman",
+    "mock-server",
     "developer-tools",
     "web-scraping",
     "fastapi"
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Code Generators",
     "Topic :: Internet :: WWW/HTTP",
@@ -32,7 +35,10 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12"
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Testing :: Mocking"
 ]
 dependencies = [
     "rich>=13.0.0",
@@ -46,8 +52,15 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0"
+    "pytest>=7.0.0",
+    "openapi-spec-validator>=0.7.0"
 ]
+
+[project.urls]
+Homepage = "https://github.com/Himanshu-Sharma12/ghostwire"
+Repository = "https://github.com/Himanshu-Sharma12/ghostwire"
+Issues = "https://github.com/Himanshu-Sharma12/ghostwire/issues"
+Changelog = "https://github.com/Himanshu-Sharma12/ghostwire/blob/main/CHANGELOG.md"
 
 [project.scripts]
 ghostwire = "ghostwire.cli:main"
@@ -57,3 +70,6 @@ gw = "ghostwire.cli:main"
 where = ["."]
 include = ["ghostwire*"]
 
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

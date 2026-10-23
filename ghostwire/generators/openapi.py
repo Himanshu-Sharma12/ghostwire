@@ -7,7 +7,27 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
-from ..core.models import AuthInfo, EndpointModel
+from ..core.models import AuthInfo, EndpointModel, ResponseSchema
+from ..core.schema import merge_schemas
+
+
+def wire_request(ep: EndpointModel) -> Tuple[Dict[str, Any], Any]:
+    """Request (schema, example) as sent on the wire; batched GraphQL wraps operations in a list."""
+    schema, example = ep.request_body.schema_dict, ep.request_body.example_payload
+    if ep.graphql_batch:
+        return {"type": "array", "items": schema}, [example]
+    return schema, example
+
+
+def wire_response(ep: EndpointModel, res: ResponseSchema) -> Tuple[Dict[str, Any], Any]:
+    """Response (schema, example) as received; batched GraphQL returns a list of results."""
+    schema, example = res.schema_dict, res.example_body
+    if ep.graphql_batch == "indexed":
+        item = {"type": "object", "properties": {"index": {"type": "integer"}, "result": schema}, "required": ["index", "result"]}
+        return {"type": "array", "items": item}, [{"index": 0, "result": example}]
+    if ep.graphql_batch:
+        return {"type": "array", "items": schema}, [example]
+    return schema, example
 
 
 class OpenApiGenerator:
@@ -47,6 +67,12 @@ class OpenApiGenerator:
                     "bearerFormat": "JWT"
                 }
                 spec["security"] = [{"BearerAuth": []}]
+            elif auth.auth_type == "basic":
+                spec["components"]["securitySchemes"]["BasicAuth"] = {
+                    "type": "http",
+                    "scheme": "basic"
+                }
+                spec["security"] = [{"BasicAuth": []}]
             elif auth.auth_type == "api_key":
                 spec["components"]["securitySchemes"]["ApiKeyAuth"] = {
                     "type": "apiKey",
@@ -62,12 +88,15 @@ class OpenApiGenerator:
                 }
                 spec["security"] = [{"CookieAuth": []}]
 
-        # Build paths
+        # Build paths (GraphQL operations sharing one URL are folded into a single operation)
         for ep in endpoints:
-            if ep.path not in spec["paths"]:
-                spec["paths"][ep.path] = {}
-
+            spec["paths"].setdefault(ep.path, {})
             method_lower = ep.method.lower()
+            existing = spec["paths"][ep.path].get(method_lower)
+            if existing is not None:
+                # Only GraphQL endpoints share a method + path; fold them into one operation
+                self._add_graphql_operation(existing, ep)
+                continue
 
             operation: Dict[str, Any] = {
                 "operationId": ep.operation_id,
@@ -92,12 +121,13 @@ class OpenApiGenerator:
 
             # Request Body
             if ep.request_body and ep.request_body.schema_dict:
+                schema, example = wire_request(ep)
                 operation["requestBody"] = {
                     "required": True,
                     "content": {
                         ep.request_body.content_type: {
-                            "schema": ep.request_body.schema_dict,
-                            "example": ep.request_body.example_payload
+                            "schema": schema,
+                            "example": example
                         }
                     }
                 }
@@ -105,21 +135,77 @@ class OpenApiGenerator:
             # Responses
             if ep.responses:
                 for code, res in ep.responses.items():
+                    schema, example = wire_response(ep, res)
                     operation["responses"][str(code)] = {
                         "description": f"Observed response ({code})",
                         "content": {
                             res.content_type: {
-                                "schema": res.schema_dict,
-                                "example": res.example_body
+                                "schema": schema,
+                                "example": example
                             }
                         }
                     }
             else:
                 operation["responses"]["200"] = {"description": "Default success"}
 
+            # Captures spanning several hosts: pin each operation to the host it was seen on
+            if len(servers) > 1:
+                operation["servers"] = [{"url": ep.base_url}]
+
+            if ep.graphql_operation:
+                operation["operationId"] = f"{method_lower}_graphql_{ep.path.strip('/').replace('/', '_') or 'root'}"
+                operation["summary"] = f"GraphQL operations: {ep.graphql_operation}"
+                operation["x-graphql-operations"] = [ep.graphql_operation]
+                for media in operation.get("requestBody", {}).get("content", {}).values():
+                    media["examples"] = {ep.graphql_operation: {"value": media.pop("example")}}
+                for response in operation["responses"].values():
+                    for media in response.get("content", {}).values():
+                        media["examples"] = {ep.graphql_operation: {"value": media.pop("example")}}
+
             spec["paths"][ep.path][method_lower] = operation
 
+        # Different paths can yield the same operation ID (/api/items and /items); OpenAPI requires uniqueness
+        seen_ids = set()
+        for path_item in spec["paths"].values():
+            for operation in path_item.values():
+                base_id = operation["operationId"]
+                unique_id = base_id
+                counter = 2
+                while unique_id in seen_ids:
+                    unique_id = f"{base_id}_{counter}"
+                    counter += 1
+                operation["operationId"] = unique_id
+                seen_ids.add(unique_id)
+
         return spec
+
+    @staticmethod
+    def _add_graphql_operation(operation: Dict[str, Any], ep: EndpointModel) -> None:
+        """Merges another GraphQL operation's payload and responses into a shared operation."""
+        operation_name = ep.graphql_operation or ep.operation_id
+        operations = operation.setdefault("x-graphql-operations", [operation["operationId"]])
+        operations.append(operation_name)
+        operation["summary"] = "GraphQL operations: " + ", ".join(operation["x-graphql-operations"])
+
+        if ep.request_body and ep.request_body.schema_dict:
+            schema, example = wire_request(ep)
+            content = operation.setdefault("requestBody", {"required": True, "content": {}})["content"]
+            media = content.setdefault(ep.request_body.content_type, {"schema": {}, "examples": {}})
+            media["schema"] = merge_schemas(media["schema"], schema)
+            if "example" in media:
+                media.setdefault("examples", {})[operations[0]] = {"value": media.pop("example")}
+            media.setdefault("examples", {})[operation_name] = {"value": example}
+
+        for code, res in ep.responses.items():
+            schema, example = wire_response(ep, res)
+            response = operation["responses"].setdefault(
+                str(code), {"description": f"Observed response ({code})", "content": {}}
+            )
+            media = response.setdefault("content", {}).setdefault(res.content_type, {"schema": {}, "examples": {}})
+            media["schema"] = merge_schemas(media["schema"], schema)
+            if "example" in media:
+                media.setdefault("examples", {})[operations[0]] = {"value": media.pop("example")}
+            media.setdefault("examples", {})[operation_name] = {"value": example}
 
     def export_files(self, endpoints: List[EndpointModel], auth: Optional[AuthInfo], 
                      output_dir: Path) -> Tuple[Path, Path]:

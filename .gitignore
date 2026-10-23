@@ -46,3 +46,11 @@ ghostwire_output/
 test_output/
 my_api/
 live_sdk/
+
+# Node (TypeScript type-check during tests)
+node_modules/
+
+# Personal network captures contain session data; only curated samples are committed
+*.har
+!examples/*.har
+!tests/fixtures/*.har

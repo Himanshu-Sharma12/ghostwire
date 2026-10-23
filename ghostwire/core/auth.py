@@ -2,7 +2,7 @@
 Identifies Bearer tokens, Basic Auth, custom API keys, and session cookies.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from .models import AuthInfo, CapturedTransaction
 
 KNOWN_AUTH_HEADERS = {
@@ -40,61 +40,80 @@ class AuthDetector:
     def __init__(self):
         pass
 
-    def detect_auth(self, transactions: List[CapturedTransaction]) -> Optional[AuthInfo]:
-        """Scans captured transactions to extract the dominant authentication method."""
-        for tx in transactions:
-            headers = tx.request_headers
+    def detect_transaction_auth(self, tx: CapturedTransaction) -> Optional[AuthInfo]:
+        """Extracts the credential carried by a single transaction, if any."""
+        headers = tx.request_headers
 
-            # 1. Check Authorization header
-            auth_val = headers.get("authorization", "")
-            if auth_val:
-                if auth_val.lower().startswith("bearer "):
-                    raw_token = auth_val[7:].strip()
-                    return AuthInfo(
-                        auth_type="bearer",
-                        header_name="Authorization",
-                        token_preview=mask_token(raw_token),
-                        token_value=raw_token
-                    )
-                elif auth_val.lower().startswith("basic "):
-                    raw_token = auth_val[6:].strip()
-                    return AuthInfo(
-                        auth_type="basic",
-                        header_name="Authorization",
-                        token_preview=mask_token(raw_token),
-                        token_value=raw_token
-                    )
-                else:
-                    return AuthInfo(
-                        auth_type="custom",
-                        header_name="Authorization",
-                        token_preview=mask_token(auth_val),
-                        token_value=auth_val
-                    )
+        # 1. Check Authorization header
+        auth_val = headers.get("authorization", "")
+        if auth_val:
+            if auth_val.lower().startswith("bearer "):
+                raw_token = auth_val[7:].strip()
+                return AuthInfo(
+                    auth_type="bearer",
+                    header_name="Authorization",
+                    token_preview=mask_token(raw_token),
+                    token_value=raw_token
+                )
+            if auth_val.lower().startswith("basic "):
+                raw_token = auth_val[6:].strip()
+                return AuthInfo(
+                    auth_type="basic",
+                    header_name="Authorization",
+                    token_preview=mask_token(raw_token),
+                    token_value=raw_token
+                )
+            return AuthInfo(
+                auth_type="custom",
+                header_name="Authorization",
+                token_preview=mask_token(auth_val),
+                token_value=auth_val
+            )
 
-            # 2. Check known API key headers
-            for h_name, h_val in headers.items():
-                if h_name in KNOWN_AUTH_HEADERS and h_val:
-                    return AuthInfo(
-                        auth_type="api_key",
-                        header_name=h_name,
-                        token_preview=mask_token(h_val),
-                        token_value=h_val
-                    )
+        # 2. Check known API key headers
+        for h_name, h_val in headers.items():
+            if h_name in KNOWN_AUTH_HEADERS and h_val:
+                return AuthInfo(
+                    auth_type="api_key",
+                    header_name=h_name,
+                    token_preview=mask_token(h_val),
+                    token_value=h_val
+                )
 
-            # 3. Check Cookie headers
-            cookie_str = headers.get("cookie", "")
-            if cookie_str:
-                cookie_parts = [c.strip() for c in cookie_str.split(";")]
-                for part in cookie_parts:
-                    if "=" in part:
-                        k, v = part.split("=", 1)
-                        if k.lower() in KNOWN_SESSION_COOKIES and v:
-                            return AuthInfo(
-                                auth_type="cookie",
-                                cookie_name=k,
-                                token_preview=mask_token(v),
-                                token_value=v
-                            )
+        # 3. Check Cookie headers
+        cookie_str = headers.get("cookie", "")
+        if cookie_str:
+            for part in (c.strip() for c in cookie_str.split(";")):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    if k.lower() in KNOWN_SESSION_COOKIES and v:
+                        return AuthInfo(
+                            auth_type="cookie",
+                            cookie_name=k,
+                            token_preview=mask_token(v),
+                            token_value=v
+                        )
 
         return None
+
+    def detect_auth(self, transactions: List[CapturedTransaction]) -> Optional[AuthInfo]:
+        """
+        Scans captured transactions to extract the dominant authentication method.
+        The most frequently used scheme wins; its most recent credential is kept,
+        since tokens refreshed later in a session are the ones still likely to be valid.
+        """
+        counts: Dict[Tuple[str, str], int] = {}
+        latest: Dict[Tuple[str, str], AuthInfo] = {}
+
+        for tx in transactions:
+            info = self.detect_transaction_auth(tx)
+            if info is None:
+                continue
+            key = (info.auth_type, (info.header_name or info.cookie_name or "").lower())
+            counts[key] = counts.get(key, 0) + 1
+            latest[key] = info
+
+        if not counts:
+            return None
+        dominant = max(counts, key=lambda k: counts[k])
+        return latest[dominant]

@@ -1,222 +1,207 @@
 # 👻 GhostWire
 
 <p align="center">
-  <b>The Autonomous Reverse-Engineering Agent for Hidden APIs & Web Traffic.</b><br>
-  <i>Feed it any <code>.har</code> network capture or website traffic. It scrubs the noise, deduces schemas & authentication, and synthesizes production-ready Python/TypeScript SDKs, OpenAPI 3.1 specs, and local mock servers in 5 seconds.</i>
+  <b>Turn browser traffic into an API you can actually use.</b><br>
+  <i>Record a <code>.har</code> file in DevTools. GhostWire strips the trackers, figures out the endpoints, parameters, schemas and auth, and generates an OpenAPI 3.1 spec, typed Python & TypeScript SDKs, a runnable mock server and a Postman collection.</i>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Himanshu-Sharma12/ghostwire/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
-  <a href="https://pypi.org/project/ghostwire/"><img src="https://img.shields.io/badge/python-3.9+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python Version"></a>
-  <a href="https://github.com/Himanshu-Sharma12/ghostwire/stargazers"><img src="https://img.shields.io/badge/stars-%E2%98%85%E2%98%85%E2%98%85%E2%98%85%E2%98%85-yellow.svg?style=flat-square" alt="Stars"></a>
-  <a href="https://github.com/Himanshu-Sharma12/ghostwire/issues"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome"></a>
-  <a href="https://github.com/Himanshu-Sharma12/ghostwire"><img src="https://img.shields.io/badge/offline-100%25%20free-green.svg?style=flat-square" alt="Offline"></a>
+  <a href="https://github.com/Himanshu-Sharma12/ghostwire/actions/workflows/ci.yml"><img src="https://github.com/Himanshu-Sharma12/ghostwire/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Himanshu-Sharma12/ghostwire/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/python-3.9%E2%80%933.13-3776AB.svg?logo=python&logoColor=white" alt="Python 3.9–3.13">
+  <img src="https://img.shields.io/badge/runs-100%25%20locally-green.svg" alt="Runs locally">
 </p>
 
 ---
 
-## ⚡ The Problem
+## Why
 
-Every developer, security researcher, scraper, and bot creator reverse-engineers private APIs and web traffic. Right now, this requires **hours of manual work**:
-1. Opening DevTools (`F12`) while 600 messy network requests flood the screen.
-2. Digging through tracking pixels, analytics, and static assets to find real data endpoints.
-3. Guessing authentication tokens, CSRF headers, and payload structures.
-4. Manually writing boilerplate `requests` or `fetch` code line-by-line.
+You open DevTools on a web app, and 600 requests scroll past: analytics pixels, fonts, Sentry beacons, and somewhere in there the twelve calls that actually matter. Turning those into something reusable means copying headers by hand, guessing which path segments are IDs, and writing a client from scratch.
 
-**GhostWire automates that entire workflow in 5 seconds.**
+GhostWire does that part for you:
 
 ```
-DevTools "Save as HAR"  ──►  GhostWire  ──►  • OpenAPI 3.1 Spec (JSON/YAML)
-                                             • Typed Python SDK (client.py)
-                                             • TypeScript SDK (client.ts)
-                                             • Instant Mock API (FastAPI)
+DevTools "Save all as HAR"  ──►  gw analyze traffic.har  ──►  openapi.json / openapi.yaml
+                                                             client.py        (httpx)
+                                                             client.ts        (fetch, zero deps)
+                                                             mock_server.py   (FastAPI)
+                                                             postman_collection.json
 ```
 
----
+Everything runs locally. No LLM, no API key, no traffic leaves your machine (except `gw call`, which replays a request on purpose).
 
-## 🎬 Terminal Preview
+## Demo
 
 ```text
-   ______  __                 __  _       ___          
-  / ____/ / /_  ____   _____ / /_| |     / (_)_____ ___ 
- / / __  / __ \/ __ \ / ___// __/| | /| / / // ___// _ \
-/ /_/ / / / / / /_/ /(__  )/ /_  | |/ |/ / // /   /  __/
-\____/ /_/ /_/\____//____/ \__/   |__/|__//_//_/    \___/ 
+$ gw inspect traffic.har
 
-⚡ Autonomous Reverse-Engineering Agent for Hidden APIs & Web Traffic
-v0.1.0 | 100% Offline & Free
-
-╭──────────────────────── 📊 Traffic Analysis Summary ─────────────────────────╮
-│ Total Captured Entries:            784                                       │
-│ Scrubbed Noise (Trackers/Assets):  742 (Google Analytics, Sentry, CSS, PNG)  │
-│ Discovered API Endpoints:          8 Clean Endpoints                         │
-│ Detected Authentication:           BEARER (Token: eyJh...8912)               │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-                      🎯 Discovered Endpoints & Parameters                      
-┏━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┓
-┃ Method   ┃ Path                           ┃ Parameters       ┃ Responses   ┃
-┡━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━┩
-│ GET      │ /api/v1/user/me                │ None             │ 200         │
-│ GET      │ /api/v1/workspaces             │ limit, page      │ 200         │
-│ POST     │ /api/v1/workspaces/{id}/invite │ id (path)        │ 201         │
-│ DELETE   │ /api/v1/projects/{projectId}   │ projectId (path) │ 204         │
-└──────────┴────────────────────────────────┴──────────────────┴─────────────┘
-
-📦 Generated Code & Artifacts:
-  ✔ openapi.json & openapi.yaml   (OpenAPI 3.1.0 Specification)
-  ✔ postman_collection.json      (Postman Collection v2.1.0)
-  ✔ client.py                     (Production Python SDK via httpx)
-  ✔ client.ts                     (Zero-dependency TypeScript SDK)
-  ✔ mock_server.py                (Standalone FastAPI Mock Server)
+╭─────────────────────────────────────────── 📊 Traffic Analysis Summary ────────────────────────────────────────────╮
+│ Total Captured Entries:            12                                                                              │
+│ Scrubbed Noise (Trackers/Assets):  2                                                                               │
+│ Discovered API Endpoints:          9                                                                               │
+│ Detected Authentication:           COOKIE (Token: s3cr...-123)                                                     │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                         🎯 Discovered Endpoints & Parameters                                         
+┏━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ Method   ┃ Host            ┃ Path                   ┃ Operation ID           ┃ Parameters              ┃ Responses ┃
+┡━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
+│ POST     │ app.example.dev │ /api/auth/login        │ create_auth_login      │ None                    │ 200       │
+│ DELETE   │ app.example.dev │ /api/projects/{projec… │ delete_projects_by_pr… │ projectId (path),       │ 204       │
+│          │                 │                        │                        │ memberId (path)         │           │
+│ GET      │ app.example.dev │ /api/search            │ get_search             │ filter[status] (query), │ 200       │
+│          │                 │                        │                        │ from (query), page.size │           │
+│          │                 │                        │                        │ (query), self (query)   │           │
+│ GET      │ app.example.dev │ /api/user_profile      │ get_user_profile       │ None                    │ 200       │
+│ GET      │ app.example.dev │ /api/users/me          │ get_users_me           │ None                    │ 200       │
+│ GET      │ app.example.dev │ /api/users/{userId}    │ get_users_by_userId    │ userId (path)           │ 200       │
+│ POST     │ app.example.dev │ /graphql (GetViewer)   │ graphql_GetViewer      │ None                    │ 200       │
+│ POST     │ app.example.dev │ /graphql (ListTeams)   │ graphql_ListTeams      │ None                    │ 200       │
+│ POST     │ app.example.dev │ /graphql               │ graphql_RenameProject  │ None                    │ 200       │
+│          │                 │ (RenameProject)        │                        │                         │           │
+└──────────┴─────────────────┴────────────────────────┴────────────────────────┴─────────────────────────┴───────────┘
 ```
 
----
+*(Real output for [`tests/fixtures/edge_cases.har`](tests/fixtures/edge_cases.har); try it yourself.)*
 
-## 🚀 Key Features
-
-* **🧹 Automated Telemetry & Noise Scrubbing:** Filters out 30+ analytics and tracking networks (Google Analytics, Datadog, Sentry, Hotjar, Facebook Pixel, Intercom) as well as fonts, images, and CSS.
-* **🔍 Dynamic Path & Prefixed ID Clustering:** Automatically converts dynamic IDs, UUIDs, ULIDs, and prefixed entities (e.g. `/users/102`, `/workspaces/ws_alpha`) into parameterized endpoint templates (`/users/{userId}`, `/workspaces/{workspaceId}`).
-* **⚡ GraphQL Operation Decompiler:** Automatically detects GraphQL requests and partitions multiple queries into distinct endpoints by operation name (`/graphql?op=GetUserProfile`).
-* **🔑 Zero-Config Auth Detection:** Scans request headers and cookies to isolate Bearer JWTs, API keys, session cookies, and basic auth headers.
-* **📋 Instant cURL Generator:** Run `gw curl traffic.har <operation>` to get an exact, runnable, copy-pasteable `curl` command with all headers and JSON payloads pre-filled.
-* **⚡ Live Terminal Execution:** Run `gw call traffic.har <operation>` to immediately execute a live request against any discovered endpoint right inside your terminal.
-* **📮 Postman Collection v2.1:** Synthesizes ready-to-import Postman collections with all endpoints and pre-configured auth.
-* **🐍 Typed Python SDK:** Emits idiomatic `httpx` code with typed methods, auto-auth injection, query params, and docstrings.
-* **⚡ Native TypeScript SDK:** Emits clean TypeScript code using native `fetch` with zero external dependencies.
-* **🎭 1-Click Mock Server:** Generates an executable FastAPI server populated with the actual captured response fixtures, letting you develop and test offline.
-* **🛡️ 100% Local & Privacy-Preserving:** Runs completely on your machine. Zero data leaves your computer. No mandatory OpenAI or external API keys needed.
-
----
-
-## 📦 Installation
-
-Install GhostWire directly via `pip`:
+## Install
 
 ```bash
-pip install ghostwire
+pip install git+https://github.com/Himanshu-Sharma12/ghostwire.git
 ```
 
-Or install from source:
+Or for development:
 
 ```bash
 git clone https://github.com/Himanshu-Sharma12/ghostwire.git
 cd ghostwire
-pip install -e .
+pip install -e ".[dev]"
 ```
 
----
+This installs two equivalent commands: `ghostwire` and the short alias `gw`.
 
-## ⚡ 30-Second Quickstart
+## Quickstart
 
-### 1. Export Network Traffic
-In Chrome, Firefox, or Safari:
-1. Open Developer Tools (`F12` or `Cmd+Option+I`) ➔ Go to the **Network** tab.
-2. Browse the web app or perform the actions you want to reverse-engineer.
-3. Right click in the network list ➔ **"Save all as HAR with content"** (saved as `traffic.har`).
+**1. Record traffic.** In Chrome, Firefox or Safari open DevTools → **Network**, use the app, then right-click the request list → **Save all as HAR with content**.
 
-### 2. Inspect the Traffic
-View the scrubbed endpoints and detected auth immediately:
+**2. See what's in it.**
 
 ```bash
-ghostwire inspect traffic.har
-# Or use the shortcut:
 gw inspect traffic.har
+gw inspect traffic.har --domain api.example.com   # ignore other hosts
+gw inspect login.har browse.har checkout.har      # merge several captures
 ```
 
-### 3. Generate Everything
-Generate OpenAPI specs, Python/TS SDKs, and the mock server:
+**3. Generate everything.**
 
 ```bash
-ghostwire analyze traffic.har --generate-all --output-dir ./my_api
+gw analyze traffic.har -o ./my_api
 ```
 
-### 4. Run the Local Mock Server
-Start an instant mock API replica of the target app on `localhost:8000`:
+**4. Use the generated SDK.**
+
+```python
+# Credentials come from the auth_token argument or an environment variable (e.g. API_TOKEN)
+from client import ApiClient
+
+with ApiClient(auth_token="...") as api:
+    me = api.get_users_me()
+    user = api.get_users_by_userId(userId=42)
+    hits = api.get_search(filter_status="open", page_size=20)   # sent as filter[status], page.size
+    api.graphql_RenameProject(variables={"id": "p_9", "name": "New name"})
+```
+
+```ts
+import { ApiClient } from "./client";
+
+const api = new ApiClient({ authToken: process.env.API_TOKEN });
+const user = await api.getUsersByUserId(42);
+```
+
+**5. Run a mock of the API offline.**
 
 ```bash
-python my_api/mock_server.py
+gw mock traffic.har --port 8000          # or: python my_api/mock_server.py --port 8000
+open http://localhost:8000/docs
 ```
-*Open [http://localhost:8000/docs](http://localhost:8000/docs) in your browser for the live Swagger UI!*
 
-### 5. Generate Copy-Pasteable cURL Command
-Get an exact, working cURL command with all headers and JSON payloads:
+**6. Replay a single request.**
 
 ```bash
-gw curl traffic.har "user"
+gw curl traffic.har get_users_me      # print a copy-pasteable curl command
+gw call traffic.har get_users_me      # send it and pretty-print the response
 ```
 
-### 6. Call Any Endpoint Live from Terminal
-Execute a live request against any discovered endpoint directly:
+`gw call` asks for confirmation before sending anything other than a GET; pass `--yes` to skip.
 
-```bash
-gw call traffic.har "user"
-```
+## What it figures out
 
----
+| Problem | What GhostWire does |
+| :--- | :--- |
+| **Noise** | Drops 70 analytics, ads, marketing and consent hosts (Google Analytics/Ads, Sentry, Datadog, HubSpot, Hotjar, Segment, …), telemetry paths on any host (`/collect`, `/log_event`, `/pixel`, `/beacon`, `/api/sentry` tunnels), static assets and CORS preflights. `--domain` overrides the lists when the "tracker" is your target. |
+| **Dynamic paths** | Turns `/users/42`, `/files/<uuid>`, `/orders/<mongo-id>`, `/customers/cus_9s6XKz` into `/users/{userId}`, etc., naming parameters after their collection (`addresses` → `addressId`). Snake-case words such as `/api/user_profile` stay literal. |
+| **GraphQL** | Recognises GraphQL by URL or by request shape (e.g. `/api/streamGraphql`), including **batched** requests (Apollo batch link), and splits them into one endpoint per operation. SDKs get a method per operation that takes `variables` (and speak the batch format when the site does); the mock server dispatches by operation and answers batches. |
+| **Schemas** | Infers JSON Schema from every observation and merges them: optional fields, nullable fields (`["string", "null"]`), integer→number widening, and array items merged across elements. |
+| **Auth** | Detects Bearer/JWT, Basic, API-key headers and session cookies, picking the scheme used most and its most recent token. |
+| **Awkward names** | Query parameters such as `filter[status]`, `page.size` or `from` become valid identifiers (`filter_status`, `page_size`, `from_`) while the original name is still sent on the wire. |
 
-## 🧠 Architecture
+## 🔒 Secrets & sharing
+
+HAR files contain live credentials. By default GhostWire keeps them out of everything it writes to disk:
+
+- Generated SDKs **do not** embed the captured token. They read it from the `auth_token` argument or an environment variable (`API_TOKEN`, `API_KEY`, `API_SESSION`, …), and the Postman collection uses an empty `{{authToken}}` variable.
+- Passwords, tokens, API keys, secrets and JWT-looking strings inside request/response bodies are replaced with `<redacted>` in the OpenAPI examples, mock fixtures and Postman bodies.
+- The mock server binds to `127.0.0.1` unless you pass `--host 0.0.0.0`.
+
+If the output is only for you, `gw analyze traffic.har --embed-secrets` keeps the captured values.
+
+`gw curl` and `gw call` **do** use the real captured credentials, since replaying the request is their whole job. Treat their output like the HAR file itself.
+
+Only analyze traffic from accounts and systems you are authorized to test.
+
+## How it works
 
 ```mermaid
-graph TD
-    A["Raw .HAR File / Network Dump"] --> B["🧹 Noise Filter & Sanitizer"]
-    B -->|Strips GTM, Sentry, CSS, Images| C["🔍 Dynamic Path Clusterer"]
-    C -->|Detects /users/:id vs /users/42| D["🧠 Schema & Auth Deductor"]
-    D --> E["⚙️ GhostWire Synthesis Engine"]
-    E --> F["📄 OpenAPI 3.1 Specification"]
-    E --> G["🐍 Typed Python SDK (httpx)"]
-    E --> H["⚡ TypeScript SDK (fetch)"]
-    E --> I["🎭 Executable Mock Server (FastAPI)"]
-    E --> J["💻 Interactive Terminal UI"]
+graph LR
+    A[".har files"] --> B["Parser"]
+    B --> C["Noise filter"]
+    C --> D["Path clusterer<br/>+ GraphQL splitter"]
+    D --> E["Schema inference<br/>+ auth detection<br/>+ redaction"]
+    E --> F["OpenAPI 3.1"]
+    E --> G["Python SDK"]
+    E --> H["TypeScript SDK"]
+    E --> I["FastAPI mock"]
+    E --> J["Postman v2.1"]
 ```
 
----
+| Module | Responsibility |
+| :--- | :--- |
+| [`core/parser.py`](ghostwire/core/parser.py) | HAR → `CapturedTransaction` (JSON, form and base64 bodies) |
+| [`core/filter.py`](ghostwire/core/filter.py) | Tracker, asset and preflight filtering |
+| [`core/cluster.py`](ghostwire/core/cluster.py) | Path parameterization and GraphQL operation detection |
+| [`core/schema.py`](ghostwire/core/schema.py) | JSON Schema inference and merging |
+| [`core/auth.py`](ghostwire/core/auth.py) | Credential detection and masking |
+| [`core/redact.py`](ghostwire/core/redact.py) | Secret redaction in payloads |
+| [`core/analyzer.py`](ghostwire/core/analyzer.py) | Orchestrates the pipeline into `EndpointModel`s |
+| [`generators/`](ghostwire/generators) | One module per output format |
 
-## 📊 Comparison: Why GhostWire?
+Every generated artifact is checked in CI: the Python SDK is imported and exercised, the TypeScript SDK passes `tsc --strict`, the OpenAPI document passes `openapi-spec-validator`, and the mock server is driven through FastAPI's test client. A separate job records real traffic from [dummyjson.com](https://dummyjson.com), generates an SDK from it and calls the live API.
 
-| Feature | DevTools Manual | Postman Interceptor | `morluto/rea` | **GhostWire** |
-| :--- | :---: | :---: | :---: | :---: |
-| **Noise & Tracker Filtering** | ❌ None | ❌ Manual | ❌ N/A | ✅ **Automatic** |
-| **Dynamic Path Clustering** (`/users/{id}`) | ❌ Manual | ❌ Manual | ❌ N/A | ✅ **Automated regex & AST** |
-| **Auth Extraction** (Bearer/Cookies) | ❌ Manual copy | ⚠️ Partial | ❌ N/A | ✅ **Automated & Masked** |
-| **Static Binary Analysis** (Ghidra/Electron) | ❌ No | ❌ No | ✅ Yes | ⏳ *Coming in v0.2* |
-| **OpenAPI 3.1 Spec Generator** | ❌ Manual write | ⚠️ Import only | ❌ No | ✅ **1-Click Generation** |
-| **Typed Python SDK (`client.py`)** | ❌ Hours of work | ❌ Basic curl | ❌ No | ✅ **Production Ready** |
-| **Typed TypeScript SDK (`client.ts`)**| ❌ Hours of work | ❌ No | ❌ No | ✅ **Zero-dependency fetch** |
-| **Instant Local Mock Server** | ❌ No | ⚠️ Paid Cloud | ❌ No | ✅ **FastAPI Executable** |
-| **100% Offline & Free** | ✅ Yes | ❌ Freemium | ✅ Yes | ✅ **100% Free (MIT)** |
+## Limitations
 
----
+GhostWire only knows what was in the capture. Endpoints you never triggered, fields that were always null, and error responses you never hit will be missing or loosely typed. If a capture spans several hosts, the SDKs default to the first host's base URL (pass `--domain` to focus on one). Path parameter detection is heuristic; check `gw inspect` before you rely on the output.
 
-## 🗺️ Roadmap
+## Roadmap
 
-- [x] High-performance HAR network parser
-- [x] Intelligent tracker & asset scrubbing engine
-- [x] Parameterized URL clustering (UUID, Integer, Mongo ObjectID)
-- [x] Deep JSON schema inference & observation merging
-- [x] Automated OpenAPI 3.1 JSON/YAML export
-- [x] Production Python SDK generator (`httpx`)
-- [x] Zero-dependency TypeScript SDK generator (`fetch`)
-- [x] Standalone FastAPI Mock Server generator
-- [ ] Direct Chrome DevTools Protocol (CDP) live proxy listener (`ghostwire listen`)
-- [ ] WebSocket and GraphQL stream decompiler
-- [ ] Local Ollama / LLM semantic docstring enricher
+- [ ] `gw listen`: capture live from Chrome via the DevTools Protocol, no HAR export needed
+- [ ] Per-host SDKs for captures that span several APIs
+- [ ] Typed request/response models in the SDKs (TypedDict / TS interfaces) from the inferred schemas
+- [ ] WebSocket and GraphQL subscription capture
+- [ ] Optional local-LLM pass for nicer method names and docstrings
 
----
+## Contributing
 
-## 🤝 Contributing
+Bug reports with a (sanitized!) HAR snippet that reproduces the problem are the most useful thing you can send. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Contributions, issues, and feature requests are welcome!  
-Feel free to check out the [issues page](https://github.com/Himanshu-Sharma12/ghostwire/issues).
+## License
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feat/amazing-feature`)
-3. Commit your Changes (`git commit -m 'feat: add amazing feature'`)
-4. Push to the Branch (`git push origin feat/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-Distributed under the **MIT License**. See `LICENSE` for more information.
+[MIT](LICENSE)

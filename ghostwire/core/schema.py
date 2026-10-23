@@ -5,6 +5,18 @@ Generates OpenAPI-compatible schemas and parameter definitions from observed net
 from typing import Any, Dict, List, Optional, Set, Tuple
 from .models import ParameterModel, RequestSchema, ResponseSchema
 
+# Arrays can hold thousands of records and endpoints thousands of calls; a sample is enough to learn their shape
+MAX_ARRAY_ITEMS_SAMPLED = 50
+MAX_BODIES_SAMPLED = 200
+
+
+def sample_evenly(values: List[Any], limit: int = MAX_BODIES_SAMPLED) -> List[Any]:
+    """Keeps at most `limit` values spread across the whole list (always including the first)."""
+    if len(values) <= limit:
+        return values
+    step = len(values) / limit
+    return [values[int(i * step)] for i in range(limit)]
+
 
 def python_type_to_openapi(val: Any) -> Tuple[str, Optional[str]]:
     """Converts a Python value to (openapi_type, openapi_format)."""
@@ -50,9 +62,11 @@ def infer_json_schema(data: Any) -> Dict[str, Any]:
 
     if openapi_type == "array" and isinstance(data, list):
         if not data:
-            return {"type": "array", "items": {"type": "string"}}
-        # Infer items from the first element or merged
-        item_schema = infer_json_schema(data[0])
+            return {"type": "array", "items": {}}
+        # Merge item schemas across the array so optional fields and mixed types are captured
+        item_schema: Dict[str, Any] = {}
+        for item in data[:MAX_ARRAY_ITEMS_SAMPLED]:
+            item_schema = merge_schemas(item_schema, infer_json_schema(item))
         return {"type": "array", "items": item_schema}
 
     schema = {"type": openapi_type}
@@ -62,21 +76,41 @@ def infer_json_schema(data: Any) -> Dict[str, Any]:
     return schema
 
 
-def merge_schemas(schema1: Dict[str, Any], schema2: Dict[str, Any]) -> Dict[str, Any]:
-    """Merges two OpenAPI schemas observed across multiple responses/requests."""
-    if not schema1:
-        return schema2
-    if not schema2:
-        return schema1
+def _schema_types(schema: Dict[str, Any]) -> Set[str]:
+    t = schema.get("type")
+    if isinstance(t, list):
+        return set(t)
+    return {t} if t else set()
 
-    t1 = schema1.get("type")
-    t2 = schema2.get("type")
 
-    if t1 != t2:
-        # Combined union type
-        return {"oneOf": [schema1, schema2]}
+def _split_null(schema: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], bool]:
+    """Splits a schema into (non-null part or None, whether null is allowed)."""
+    types = _schema_types(schema)
+    if "null" not in types:
+        return schema, False
+    rest = sorted(types - {"null"})
+    if not rest:
+        return None, True
+    return {**schema, "type": rest[0] if len(rest) == 1 else rest}, True
 
-    if t1 == "object":
+
+def _with_null(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Marks a schema as nullable using the OpenAPI 3.1 type array form."""
+    if "oneOf" in schema:
+        variants = schema["oneOf"]
+        if not any(_schema_types(v) == {"null"} for v in variants):
+            return {"oneOf": variants + [{"type": "null"}]}
+        return schema
+    types = _schema_types(schema)
+    if not types or "null" in types:
+        return schema
+    result = dict(schema)
+    result["type"] = sorted(types) + ["null"]
+    return result
+
+
+def _merge_same_kind(schema1: Dict[str, Any], schema2: Dict[str, Any], kind: str) -> Dict[str, Any]:
+    if kind == "object":
         props1 = schema1.get("properties", {})
         props2 = schema2.get("properties", {})
         merged_props = dict(props1)
@@ -87,10 +121,9 @@ def merge_schemas(schema1: Dict[str, Any], schema2: Dict[str, Any]) -> Dict[str,
             else:
                 merged_props[k] = v
 
-        # Required fields are those present in both
-        req1 = set(schema1.get("required", []))
+        # Required fields are those present in both, keeping first-seen order
         req2 = set(schema2.get("required", []))
-        common_required = list(req1.intersection(req2))
+        common_required = [r for r in schema1.get("required", []) if r in req2]
 
         return {
             "type": "object",
@@ -98,12 +131,84 @@ def merge_schemas(schema1: Dict[str, Any], schema2: Dict[str, Any]) -> Dict[str,
             "required": common_required
         }
 
-    if t1 == "array":
-        items1 = schema1.get("items", {})
-        items2 = schema2.get("items", {})
-        return {"type": "array", "items": merge_schemas(items1, items2)}
+    if kind == "array":
+        return {"type": "array", "items": merge_schemas(schema1.get("items", {}), schema2.get("items", {}))}
+
+    if kind == "number":
+        merged = {"type": "number", "format": "double"}
+        if "example" in schema1:
+            merged["example"] = schema1["example"]
+        return merged
+
+    if schema1.get("format") != schema2.get("format"):
+        merged = {k: v for k, v in schema1.items() if k != "format"}
+        return merged
 
     return schema1
+
+
+def _kind(types: Set[str]) -> Optional[str]:
+    """Returns the single merge kind for a set of non-null types, widening integer to number."""
+    if types <= {"integer", "number"} and types:
+        return "number" if "number" in types else "integer"
+    if len(types) == 1:
+        return next(iter(types))
+    return None
+
+
+def merge_schemas(schema1: Dict[str, Any], schema2: Dict[str, Any]) -> Dict[str, Any]:
+    """Merges two OpenAPI schemas observed across multiple responses/requests."""
+    if not schema1:
+        return schema2
+    if not schema2:
+        return schema1
+
+    # Union schemas: merge each observation into a compatible variant, or append it.
+    # Null is kept as one separate variant so a null value never matches two branches.
+    if "oneOf" in schema1 or "oneOf" in schema2:
+        variants: List[Dict[str, Any]] = []
+        nullable = False
+        for incoming in list(schema1.get("oneOf", [schema1])) + list(schema2.get("oneOf", [schema2])):
+            core, has_null = _split_null(incoming)
+            nullable = nullable or has_null
+            if core is None:
+                continue
+            incoming_kind = _kind(_schema_types(core))
+            for i, existing in enumerate(variants):
+                existing_kind = _kind(_schema_types(existing))
+                if incoming_kind is not None and existing_kind is not None and _kind({incoming_kind, existing_kind}):
+                    variants[i] = merge_schemas(existing, core)
+                    break
+            else:
+                variants.append(core)
+        if nullable:
+            variants.append({"type": "null"})
+        return variants[0] if len(variants) == 1 else {"oneOf": variants}
+
+    types1 = _schema_types(schema1)
+    types2 = _schema_types(schema2)
+    nullable = "null" in types1 or "null" in types2
+    core1 = types1 - {"null"}
+    core2 = types2 - {"null"}
+
+    if not core1 and not core2:
+        return {"type": "null"}
+    if not core1:
+        return _with_null(schema2)
+    if not core2:
+        return _with_null(schema1)
+
+    kind1, kind2 = _kind(core1), _kind(core2)
+    combined = _kind({kind1, kind2}) if kind1 and kind2 else None
+    if combined is None:
+        strip = lambda sc: {**sc, "type": sorted(_schema_types(sc) - {"null"})[0]} if "null" in _schema_types(sc) else sc
+        merged = {"oneOf": [strip(schema1), strip(schema2)]}
+    else:
+        s1 = {**schema1, "type": combined}
+        s2 = {**schema2, "type": combined}
+        merged = _merge_same_kind(s1, s2, combined)
+
+    return _with_null(merged) if nullable else merged
 
 
 class SchemaEngine:
@@ -140,7 +245,7 @@ class SchemaEngine:
             return None
 
         merged = {}
-        for body in valid_bodies:
+        for body in sample_evenly(valid_bodies):
             schema = infer_json_schema(body)
             merged = merge_schemas(merged, schema)
 
@@ -163,7 +268,7 @@ class SchemaEngine:
             )
 
         merged = {}
-        for body in valid_bodies:
+        for body in sample_evenly(valid_bodies):
             schema = infer_json_schema(body)
             merged = merge_schemas(merged, schema)
 

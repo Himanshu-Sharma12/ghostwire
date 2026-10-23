@@ -12,6 +12,11 @@ from .filter import NoiseFilter
 from .models import CapturedTransaction
 
 
+def load_json(text: str):
+    """json.loads that maps the non-standard NaN/Infinity constants to None so outputs stay valid JSON."""
+    return json.loads(text, parse_constant=lambda _: None)
+
+
 class HarParser:
     def __init__(self, noise_filter: Optional[NoiseFilter] = None):
         self.noise_filter = noise_filter or NoiseFilter()
@@ -32,7 +37,10 @@ class HarParser:
 
     def parse_dict(self, data: dict) -> Tuple[List[CapturedTransaction], Dict[str, int]]:
         """Parses a loaded HAR dictionary."""
-        entries = data.get("log", {}).get("entries", [])
+        if not isinstance(data, dict) or not isinstance(data.get("log"), dict) \
+                or not isinstance(data["log"].get("entries", []), list):
+            raise ValueError("not a HAR file (expected a JSON object with log.entries)")
+        entries = data["log"].get("entries", [])
         total_entries = len(entries)
         kept_transactions: List[CapturedTransaction] = []
         discarded_count = 0
@@ -74,7 +82,7 @@ class HarParser:
                         request_body = {k: (v[0] if len(v) == 1 else v) for k, v in parsed_form.items()}
                     else:
                         try:
-                            request_body = json.loads(text_body)
+                            request_body = load_json(text_body)
                         except Exception:
                             request_body = text_body
                 elif params_list:
@@ -93,7 +101,7 @@ class HarParser:
                     except Exception:
                         pass
                 try:
-                    response_body = json.loads(text_res)
+                    response_body = load_json(text_res)
                 except Exception:
                     response_body = text_res
 

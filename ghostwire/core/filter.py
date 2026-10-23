@@ -2,7 +2,6 @@
 Scrubs trackers, analytics, telemetry, static assets, and third-party noise.
 """
 
-import re
 from typing import Set
 from urllib.parse import urlparse
 
@@ -11,7 +10,7 @@ STATIC_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".bmp", ".tiff",
     ".css", ".woff", ".woff2", ".ttf", ".eot", ".otf",
     ".mp4", ".webm", ".ogv", ".mp3", ".wav", ".flac",
-    ".map", ".wasm"
+    ".map", ".wasm", ".webmanifest", "/manifest.json"
 }
 
 # Domains / host substrings to discard (trackers, telemetry, ads, CDNs)
@@ -33,7 +32,25 @@ TRACKER_DOMAINS = {
     "branch.io", "api2.branch.io",
     "criteo.com", "criteo.net",
     "scorecardresearch.com",
-    "adnxs.com"
+    "adnxs.com",
+    # Ads & tag management
+    "googleadservices.com", "googlesyndication.com", "googletagservices.com", "gstatic.com",
+    "bat.bing.com", "px.ads.linkedin.com", "snap.licdn.com", "analytics.tiktok.com", "ct.pinterest.com",
+    "ads-twitter.com", "static.ads-twitter.com", "taboola.com", "outbrain.com", "quantserve.com",
+    # Marketing, CRM & visitor intelligence
+    "hubspot.com", "hubapi.com", "hscollectedforms.net", "hs-analytics.net", "hs-scripts.com",
+    "hs-banner.com", "hsforms.com", "hsadspixel.net", "lusha.com", "clearbit.com", "6sc.co",
+    # Product analytics & session replay
+    "posthog.com", "heapanalytics.com", "plausible.io", "mouseflow.com", "smartlook.com", "pendo.io",
+    # Consent banners
+    "onetrust.com", "cookielaw.org", "cookiebot.com", "trustarc.com",
+    # Google anti-abuse / web attestation
+    "jnn-pa.googleapis.com",
+}
+
+# Path segments that mark telemetry on any host (first-party tunnels such as /api/sentry included)
+TRACKER_PATH_SEGMENTS = {
+    "collect", "log_event", "beacon", "pixel", "sentry", "telemetry", "rum", "rmkt", "ccm", "pagead",
 }
 
 # Content-types that represent real data/API exchanges
@@ -66,19 +83,25 @@ class NoiseFilter:
         path = parsed.path.lower()
         hostname = (parsed.hostname or "").lower()
 
-        # 2. Filter out known tracker domains
-        for tracker in TRACKER_DOMAINS:
-            if tracker in hostname:
+        # Entries without a real http(s) URL (data:, blob:, chrome-extension:, malformed) are not API calls
+        if parsed.scheme not in {"http", "https"} or not hostname:
+            return False
+
+        # 4. If target_domains specified, filter by them (an explicit target overrides the tracker lists)
+        if self.target_domains:
+            if not any(target in hostname for target in self.target_domains):
+                return False
+        else:
+            # 2. Filter out known tracker domains (the domain itself or any subdomain)
+            if any(hostname == tracker or hostname.endswith("." + tracker) for tracker in TRACKER_DOMAINS):
+                return False
+            # Telemetry endpoints recognisable by path, whatever the host
+            if any(segment in TRACKER_PATH_SEGMENTS for segment in path.split("/")):
                 return False
 
         # 3. Filter out static file extensions
         for ext in STATIC_EXTENSIONS:
             if path.endswith(ext):
-                return False
-
-        # 4. If target_domains specified, filter by them
-        if self.target_domains:
-            if not any(target in hostname for target in self.target_domains):
                 return False
 
         # 5. Check Content-Type markers
