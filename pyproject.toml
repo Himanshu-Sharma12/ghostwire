@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Autonomous Reverse-Engineering Agent for Hidden APIs & Web Traffic"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
     { name = "GhostWire Community" }
 ]
@@ -28,7 +28,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Code Generators",
     "Topic :: Internet :: WWW/HTTP",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -53,3 +52,8 @@ dev = [
 [project.scripts]
 ghostwire = "ghostwire.cli:main"
 gw = "ghostwire.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ghostwire*"]
+
