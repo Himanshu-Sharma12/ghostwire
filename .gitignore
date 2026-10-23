@@ -40,12 +40,9 @@ env/
 .coverage
 htmlcov/
 
-# GhostWire temp outputs
-.ghostwire_tmp/
+# GhostWire output (default -o folder and the README example)
 ghostwire_output/
-test_output/
 my_api/
-live_sdk/
 
 # Node (TypeScript type-check during tests)
 node_modules/
@@ -54,6 +51,3 @@ node_modules/
 *.har
 !examples/*.har
 !tests/fixtures/*.har
-
-# Private project notes
-PROJECT_CONTEXT.md
