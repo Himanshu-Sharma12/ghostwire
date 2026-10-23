@@ -1,0 +1,4 @@
+# Files the test suite needs, so tests also run from the source distribution
+include CHANGELOG.md CONTRIBUTING.md
+recursive-include examples *.har *.py
+recursive-include tests/fixtures *.har
