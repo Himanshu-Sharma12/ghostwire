@@ -54,3 +54,6 @@ node_modules/
 *.har
 !examples/*.har
 !tests/fixtures/*.har
+
+# Private project notes
+PROJECT_CONTEXT.md
