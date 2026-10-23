@@ -7,6 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/Himanshu-Sharma12/ghostwire/actions/workflows/ci.yml"><img src="https://github.com/Himanshu-Sharma12/ghostwire/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://pypi.org/project/ghostwire-cli/"><img src="https://img.shields.io/pypi/v/ghostwire-cli.svg" alt="PyPI"></a>
   <a href="https://github.com/Himanshu-Sharma12/ghostwire/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/python-3.9%E2%80%933.13-3776AB.svg?logo=python&logoColor=white" alt="Python 3.9–3.13">
   <img src="https://img.shields.io/badge/runs-100%25%20locally-green.svg" alt="Runs locally">
@@ -66,7 +67,7 @@ $ gw inspect traffic.har
 ## Install
 
 ```bash
-pip install git+https://github.com/Himanshu-Sharma12/ghostwire.git
+pip install ghostwire-cli
 ```
 
 Or for development:
