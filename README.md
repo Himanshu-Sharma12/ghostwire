@@ -6,11 +6,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/your-username/ghostwire/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
+  <a href="https://github.com/Himanshu-Sharma12/ghostwire/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://pypi.org/project/ghostwire/"><img src="https://img.shields.io/badge/python-3.9+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python Version"></a>
-  <a href="https://github.com/your-username/ghostwire/stargazers"><img src="https://img.shields.io/badge/stars-%E2%98%85%E2%98%85%E2%98%85%E2%98%85%E2%98%85-yellow.svg?style=flat-square" alt="Stars"></a>
-  <a href="https://github.com/your-username/ghostwire/issues"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome"></a>
-  <a href="https://github.com/your-username/ghostwire"><img src="https://img.shields.io/badge/offline-100%25%20free-green.svg?style=flat-square" alt="Offline"></a>
+  <a href="https://github.com/Himanshu-Sharma12/ghostwire/stargazers"><img src="https://img.shields.io/badge/stars-%E2%98%85%E2%98%85%E2%98%85%E2%98%85%E2%98%85-yellow.svg?style=flat-square" alt="Stars"></a>
+  <a href="https://github.com/Himanshu-Sharma12/ghostwire/issues"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome"></a>
+  <a href="https://github.com/Himanshu-Sharma12/ghostwire"><img src="https://img.shields.io/badge/offline-100%25%20free-green.svg?style=flat-square" alt="Offline"></a>
 </p>
 
 ---
@@ -100,7 +100,7 @@ pip install ghostwire
 Or install from source:
 
 ```bash
-git clone https://github.com/your-username/ghostwire.git
+git clone https://github.com/Himanshu-Sharma12/ghostwire.git
 cd ghostwire
 pip install -e .
 ```
@@ -207,7 +207,7 @@ graph TD
 ## 🤝 Contributing
 
 Contributions, issues, and feature requests are welcome!  
-Feel free to check out the [issues page](https://github.com/your-username/ghostwire/issues).
+Feel free to check out the [issues page](https://github.com/Himanshu-Sharma12/ghostwire/issues).
 
 1. Fork the Project
 2. Create your Feature Branch (`git checkout -b feat/amazing-feature`)

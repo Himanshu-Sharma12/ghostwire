@@ -36,7 +36,7 @@ BANNER = r"""[bold cyan]
 \____/ /_/ /_/\____//____/ \__/   |__/|__//_//_/    \___/ 
 [/bold cyan]
 [dim cyan]⚡ Autonomous Reverse-Engineering Agent for Hidden APIs & Web Traffic[/dim cyan]
-[dim]v""" + __version__ + """ | 100% Offline & Free | https://github.com/your-username/ghostwire[/dim]
+[dim]v""" + __version__ + """ | 100% Offline & Free | https://github.com/Himanshu-Sharma12/ghostwire[/dim]
 """
 
 
