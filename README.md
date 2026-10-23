@@ -65,6 +65,7 @@ v0.1.0 | 100% Offline & Free
 
 📦 Generated Code & Artifacts:
   ✔ openapi.json & openapi.yaml   (OpenAPI 3.1.0 Specification)
+  ✔ postman_collection.json      (Postman Collection v2.1.0)
   ✔ client.py                     (Production Python SDK via httpx)
   ✔ client.ts                     (Zero-dependency TypeScript SDK)
   ✔ mock_server.py                (Standalone FastAPI Mock Server)
@@ -75,8 +76,12 @@ v0.1.0 | 100% Offline & Free
 ## 🚀 Key Features
 
 * **🧹 Automated Telemetry & Noise Scrubbing:** Filters out 30+ analytics and tracking networks (Google Analytics, Datadog, Sentry, Hotjar, Facebook Pixel, Intercom) as well as fonts, images, and CSS.
-* **🔍 Dynamic Path Clustering:** Automatically converts dynamic IDs, UUIDs, and hashes (e.g. `/users/102`, `/users/459`) into parameterized endpoint templates (`/users/{userId}`).
+* **🔍 Dynamic Path & Prefixed ID Clustering:** Automatically converts dynamic IDs, UUIDs, ULIDs, and prefixed entities (e.g. `/users/102`, `/workspaces/ws_alpha`) into parameterized endpoint templates (`/users/{userId}`, `/workspaces/{workspaceId}`).
+* **⚡ GraphQL Operation Decompiler:** Automatically detects GraphQL requests and partitions multiple queries into distinct endpoints by operation name (`/graphql?op=GetUserProfile`).
 * **🔑 Zero-Config Auth Detection:** Scans request headers and cookies to isolate Bearer JWTs, API keys, session cookies, and basic auth headers.
+* **📋 Instant cURL Generator:** Run `gw curl traffic.har <operation>` to get an exact, runnable, copy-pasteable `curl` command with all headers and JSON payloads pre-filled.
+* **⚡ Live Terminal Execution:** Run `gw call traffic.har <operation>` to immediately execute a live request against any discovered endpoint right inside your terminal.
+* **📮 Postman Collection v2.1:** Synthesizes ready-to-import Postman collections with all endpoints and pre-configured auth.
 * **🐍 Typed Python SDK:** Emits idiomatic `httpx` code with typed methods, auto-auth injection, query params, and docstrings.
 * **⚡ Native TypeScript SDK:** Emits clean TypeScript code using native `fetch` with zero external dependencies.
 * **🎭 1-Click Mock Server:** Generates an executable FastAPI server populated with the actual captured response fixtures, letting you develop and test offline.
@@ -133,6 +138,20 @@ Start an instant mock API replica of the target app on `localhost:8000`:
 python my_api/mock_server.py
 ```
 *Open [http://localhost:8000/docs](http://localhost:8000/docs) in your browser for the live Swagger UI!*
+
+### 5. Generate Copy-Pasteable cURL Command
+Get an exact, working cURL command with all headers and JSON payloads:
+
+```bash
+gw curl traffic.har "user"
+```
+
+### 6. Call Any Endpoint Live from Terminal
+Execute a live request against any discovered endpoint directly:
+
+```bash
+gw call traffic.har "user"
+```
 
 ---
 

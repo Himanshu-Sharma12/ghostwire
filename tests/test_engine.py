@@ -5,13 +5,14 @@ import pytest
 
 from ghostwire.core.analyzer import ReverseEngineeringEngine
 from ghostwire.core.auth import AuthDetector
-from ghostwire.core.cluster import PathClusterer, infer_parameter_name
+from ghostwire.core.cluster import PathClusterer, extract_graphql_operation, infer_parameter_name
 from ghostwire.core.filter import NoiseFilter
 from ghostwire.core.models import CapturedTransaction
 from ghostwire.core.parser import HarParser
 from ghostwire.core.schema import SchemaEngine, infer_json_schema, merge_schemas
 from ghostwire.generators.mock_server import MockServerGenerator
 from ghostwire.generators.openapi import OpenApiGenerator
+from ghostwire.generators.postman import PostmanCollectionGenerator
 from ghostwire.generators.python_sdk import PythonSdkGenerator
 from ghostwire.generators.typescript_sdk import TypeScriptSdkGenerator
 
@@ -44,6 +45,12 @@ def test_path_clustering():
     assert path2 == "/workspaces/{workspaceId}/files"
     assert len(params2) == 1
     assert params2[0].name == "workspaceId"
+
+    # Prefixed ID (e.g. ws_alpha, usr_102)
+    path3, params3 = clusterer.parameterize_path("/workspaces/ws_alpha/projects")
+    assert path3 == "/workspaces/{workspaceId}/projects"
+    assert len(params3) == 1
+    assert params3[0].name == "workspaceId"
 
 
 def test_schema_inference_and_merge():
@@ -109,3 +116,21 @@ def test_end_to_end_analysis():
     mock_gen = MockServerGenerator()
     mock_code = mock_gen.generate_code(endpoints, auth)
     assert "app = FastAPI" in mock_code
+
+    postman_gen = PostmanCollectionGenerator(collection_name="Test API")
+    coll = postman_gen.generate_collection(endpoints, auth)
+    assert coll["info"]["name"] == "Test API"
+    assert len(coll["item"]) > 0
+    assert coll["auth"]["type"] == "bearer"
+
+
+def test_graphql_operation_extraction():
+    tx = CapturedTransaction(
+        method="POST",
+        url="https://api.example.com/graphql",
+        status_code=200,
+        request_body={"operationName": "GetWorkspaceFeed", "query": "query GetWorkspaceFeed { viewer { id } }"}
+    )
+    op = extract_graphql_operation(tx)
+    assert op == "GetWorkspaceFeed"
+

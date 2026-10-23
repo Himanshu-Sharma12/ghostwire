@@ -66,11 +66,19 @@ class HarParser:
             post_data = req.get("postData", {})
             if post_data:
                 text_body = post_data.get("text", "")
+                params_list = post_data.get("params", [])
+                
                 if text_body:
-                    try:
-                        request_body = json.loads(text_body)
-                    except Exception:
-                        request_body = text_body
+                    if "application/x-www-form-urlencoded" in req_ct:
+                        parsed_form = parse_qs(text_body)
+                        request_body = {k: (v[0] if len(v) == 1 else v) for k, v in parsed_form.items()}
+                    else:
+                        try:
+                            request_body = json.loads(text_body)
+                        except Exception:
+                            request_body = text_body
+                elif params_list:
+                    request_body = {p.get("name"): p.get("value") for p in params_list if "name" in p}
 
             # Parse response body
             response_body = None

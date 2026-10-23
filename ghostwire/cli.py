@@ -18,6 +18,7 @@ from . import __version__
 from .core.analyzer import ReverseEngineeringEngine
 from .generators.mock_server import MockServerGenerator
 from .generators.openapi import OpenApiGenerator
+from .generators.postman import PostmanCollectionGenerator
 from .generators.python_sdk import PythonSdkGenerator
 from .generators.typescript_sdk import TypeScriptSdkGenerator
 
@@ -187,6 +188,11 @@ def analyze(
     mock_path = mock_gen.export_file(endpoints, auth, out_path)
     generated_files.append((mock_path, "Standalone FastAPI Mock Server"))
 
+    # 5. Postman Collection
+    postman_gen = PostmanCollectionGenerator(collection_name="Discovered API")
+    postman_path = postman_gen.export_file(endpoints, auth, out_path)
+    generated_files.append((postman_path, "Postman Collection v2.1.0"))
+
     # Summary Panel
     out_table = Table(title="📦 Generated Code & Artifacts", border_style="cyan")
     out_table.add_column("File", style="bold green")
@@ -232,11 +238,115 @@ def mock(
     console.print(f"⚡ Booting mock server with [bold green]{len(endpoints)} endpoints[/bold green] on port [bold cyan]{port}[/bold cyan]...")
     console.print(f"📖 Swagger Docs: [bold underline]http://localhost:{port}/docs[/bold underline]")
 
+    import importlib.util
     import uvicorn
-    # Load app dynamically
-    sys.path.insert(0, str(temp_dir.resolve()))
-    import mock_server
-    uvicorn.run(mock_server.app, host="0.0.0.0", port=port)
+    # Load app dynamically from generated file
+    spec = importlib.util.spec_from_file_location("ghostwire_mock_module", str(mock_file.resolve()))
+    if spec and spec.loader:
+        mock_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mock_module)
+        uvicorn.run(getattr(mock_module, "app"), host="0.0.0.0", port=port)
+    else:
+        console.print("[bold red]Failed to load generated mock server.[/bold red]")
+
+
+@app.command()
+def curl(
+    har_file: str = typer.Argument(..., help="Path to .har HTTP archive capture file"),
+    target: str = typer.Argument(..., help="Operation ID or path substring to generate cURL for")
+):
+    """
+    📋 Generate an exact, copy-pasteable cURL command for any discovered endpoint.
+    """
+    print_banner()
+    har_path = Path(har_file)
+    if not har_path.exists():
+        console.print(f"[bold red]Error:[/bold red] File not found: [yellow]{har_file}[/yellow]")
+        raise typer.Exit(code=1)
+
+    import json
+    engine = ReverseEngineeringEngine()
+    endpoints, auth, _ = engine.analyze_har(str(har_path))
+
+    matched = [e for e in endpoints if target.lower() in e.operation_id.lower() or target.lower() in e.path.lower()]
+    if not matched:
+        console.print(f"[bold red]Error:[/bold red] No endpoint found matching '[yellow]{target}[/yellow]'.")
+        console.print("Available operation IDs:\n  " + "\n  ".join([e.operation_id for e in endpoints]))
+        raise typer.Exit(code=1)
+
+    ep = matched[0]
+    curl_parts = [f"curl -X {ep.method.upper()} '{ep.original_url}'"]
+    curl_parts.append("-H 'Accept: application/json'")
+
+    if auth:
+        if auth.auth_type == "bearer" and auth.token_value:
+            curl_parts.append(f"-H 'Authorization: Bearer {auth.token_value}'")
+        elif auth.auth_type == "api_key" and auth.token_value:
+            curl_parts.append(f"-H '{auth.header_name or 'x-api-key'}: {auth.token_value}'")
+
+    if ep.request_body and ep.request_body.example_payload:
+        curl_parts.append("-H 'Content-Type: application/json'")
+        payload_str = json.dumps(ep.request_body.example_payload)
+        curl_parts.append(f"-d '{payload_str}'")
+
+    curl_cmd = " \\\n  ".join(curl_parts)
+    console.print(f"[bold green]🎯 Matching Endpoint:[/bold green] [bold cyan]{ep.method} {ep.path}[/bold cyan] ({ep.operation_id})")
+    console.print(Panel(Syntax(curl_cmd, "bash", theme="monokai"), title="📋 Generated cURL Command", border_style="cyan"))
+
+
+@app.command()
+def call(
+    har_file: str = typer.Argument(..., help="Path to .har HTTP archive capture file"),
+    target: str = typer.Argument(..., help="Operation ID or path substring to call live")
+):
+    """
+    ⚡ Execute a live request against any discovered endpoint directly from your terminal.
+    """
+    print_banner()
+    har_path = Path(har_file)
+    if not har_path.exists():
+        console.print(f"[bold red]Error:[/bold red] File not found: [yellow]{har_file}[/yellow]")
+        raise typer.Exit(code=1)
+
+    import json
+    import httpx
+    engine = ReverseEngineeringEngine()
+    endpoints, auth, _ = engine.analyze_har(str(har_path))
+
+    matched = [e for e in endpoints if target.lower() in e.operation_id.lower() or target.lower() in e.path.lower()]
+    if not matched:
+        console.print(f"[bold red]Error:[/bold red] No endpoint found matching '[yellow]{target}[/yellow]'.")
+        raise typer.Exit(code=1)
+
+    ep = matched[0]
+    console.print(f"🚀 Calling live endpoint: [bold cyan]{ep.method} {ep.original_url}[/bold cyan] ...")
+
+    headers = {"Accept": "application/json"}
+    if auth:
+        if auth.auth_type == "bearer" and auth.token_value:
+            headers["Authorization"] = f"Bearer {auth.token_value}"
+        elif auth.auth_type == "api_key" and auth.token_value:
+            headers[auth.header_name or "x-api-key"] = auth.token_value
+
+    try:
+        t0 = time.time()
+        with httpx.Client(timeout=15.0) as client:
+            res = client.request(
+                method=ep.method.upper(),
+                url=ep.original_url,
+                headers=headers,
+                json=ep.request_body.example_payload if (ep.request_body and ep.request_body.example_payload) else None
+            )
+        elapsed = round((time.time() - t0) * 1000, 2)
+        console.print(f"✨ Status: [bold green]{res.status_code}[/bold green] | Time: [cyan]{elapsed}ms[/cyan]")
+        try:
+            formatted_json = json.dumps(res.json(), indent=2)
+            console.print(Syntax(formatted_json, "json", theme="monokai"))
+        except Exception:
+            console.print(res.text)
+    except Exception as exc:
+        console.print(f"[bold red]Request Error:[/bold red] {exc}")
+        raise typer.Exit(code=1)
 
 
 @app.command()

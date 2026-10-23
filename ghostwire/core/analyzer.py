@@ -18,7 +18,13 @@ def generate_operation_id(method: str, path: str) -> str:
     """
     Generates a clean, idiomatic Python/TypeScript function name.
     E.g. GET /api/v1/users/{userId}/posts -> get_user_posts
+    E.g. POST /graphql?op=GetWorkspace -> graphql_GetWorkspace
     """
+    if "?op=" in path:
+        _, op_val = path.split("?op=", 1)
+        op_clean = re.sub(r"[^a-zA-Z0-9_]", "_", op_val).strip("_")
+        return f"graphql_{op_clean}"
+
     clean_path = re.sub(r"^/api/v\d+/", "", path)
     clean_path = re.sub(r"^/api/", "", clean_path)
     clean_path = re.sub(r"^/v\d+/", "", clean_path)

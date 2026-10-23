@@ -152,6 +152,8 @@ class PythonSdkGenerator:
             lines.append(f'            {", ".join(req_kwargs)}')
             lines.append('        )')
             lines.append('        response.raise_for_status()')
+            lines.append('        if response.status_code == 204 or not response.content:')
+            lines.append('            return {"status_code": response.status_code, "success": True}')
             lines.append('        try:')
             lines.append('            return response.json()')
             lines.append('        except Exception:')
