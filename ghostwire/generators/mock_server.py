@@ -52,14 +52,15 @@ class MockServerGenerator:
                 status_code = min(ep.responses.keys())
                 sample_response = ep.responses[status_code].example_body
 
-            fixture_str = json.dumps(sample_response, indent=4) if sample_response is not None else "{}"
-
             method_lower = ep.method.lower()
             decorator = f'@app.{method_lower}("{ep.path}", status_code={status_code}, summary="{ep.summary}")'
             lines.append(decorator)
             lines.append(f"async def {op_name}(request: Request):")
             lines.append(f'    """Mock response for {ep.method} {ep.path}"""')
-            lines.append(f"    return {fixture_str}")
+            if status_code == 204:
+                lines.append("    return Response(status_code=204)")
+            else:
+                lines.append(f"    return {repr(sample_response)}")
             lines.append("")
 
         lines.extend([

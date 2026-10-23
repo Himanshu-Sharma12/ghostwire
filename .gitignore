@@ -44,3 +44,4 @@ htmlcov/
 .ghostwire_tmp/
 ghostwire_output/
 test_output/
+my_api/
