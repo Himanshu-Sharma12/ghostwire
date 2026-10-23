@@ -45,3 +45,4 @@ htmlcov/
 ghostwire_output/
 test_output/
 my_api/
+live_sdk/
