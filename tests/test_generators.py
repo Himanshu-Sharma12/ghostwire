@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from ghostwire.core.analyzer import ReverseEngineeringEngine
+from ghostwire.generators.markdown_doc import MarkdownDocGenerator
 from ghostwire.generators.mock_server import MockServerGenerator
 from ghostwire.generators.openapi import OpenApiGenerator
 from ghostwire.generators.postman import PostmanCollectionGenerator
@@ -324,3 +325,39 @@ def test_batched_graphql_round_trip(tmp_path):
     spec = OpenApiGenerator().generate_spec(endpoints, auth)
     validator.validate(json.loads(json.dumps(spec)))
     assert spec["paths"]["/api/streamGraphql"]["post"]["requestBody"]["content"]["application/json"]["schema"]["type"] == "array"
+
+
+def test_markdown_doc_generator(tmp_path):
+    har = ROOT / "examples" / "sample_traffic.har"
+    endpoints, auth, _ = ReverseEngineeringEngine().analyze_har(str(har))
+    gen = MarkdownDocGenerator(title="Test Sample API", embed_secrets=False)
+    doc = gen.generate(endpoints, auth)
+
+    assert "# Test Sample API" in doc
+    assert "## Overview" in doc
+    assert "## Endpoints Summary" in doc
+    assert "## Detailed Endpoints" in doc
+    assert "curl -X" in doc
+    # Secret must be masked by default
+    assert "s3cr3t-t0k3n" not in doc
+
+    # When embed_secrets=True, secrets are rendered
+    gen_embedded = MarkdownDocGenerator(title="Test Sample API", embed_secrets=True)
+    doc_embedded = gen_embedded.generate(endpoints, auth)
+    if auth and auth.token_value:
+        assert auth.token_value in doc_embedded
+
+
+def test_markdown_doc_export_file(tmp_path):
+    har = ROOT / "examples" / "sample_traffic.har"
+    endpoints, auth, _ = ReverseEngineeringEngine().analyze_har(str(har))
+    gen = MarkdownDocGenerator()
+    out_file = gen.export_file(endpoints, auth, tmp_path)
+
+    assert out_file.exists()
+    assert out_file.name == "API_REFERENCE.md"
+    content = out_file.read_text(encoding="utf-8")
+    assert "# API Reference" in content
+    assert len(endpoints) > 0
+    assert "curl -X" in content
+

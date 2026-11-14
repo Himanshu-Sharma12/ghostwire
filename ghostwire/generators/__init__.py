@@ -1,5 +1,6 @@
 """Code and specification generators for GhostWire."""
 
+from .markdown_doc import MarkdownDocGenerator
 from .mock_server import MockServerGenerator
 from .openapi import OpenApiGenerator
 from .postman import PostmanCollectionGenerator
@@ -11,5 +12,6 @@ __all__ = [
     "PythonSdkGenerator",
     "TypeScriptSdkGenerator",
     "MockServerGenerator",
-    "PostmanCollectionGenerator"
+    "PostmanCollectionGenerator",
+    "MarkdownDocGenerator"
 ]

@@ -21,6 +21,7 @@ from rich.syntax import Syntax
 from . import __version__
 from .core.analyzer import ReverseEngineeringEngine
 from .core.models import AuthInfo, EndpointModel
+from .generators.markdown_doc import MarkdownDocGenerator
 from .generators.mock_server import MockServerGenerator
 from .generators.openapi import OpenApiGenerator
 from .generators.postman import PostmanCollectionGenerator
@@ -271,6 +272,11 @@ def analyze(
     postman_gen = PostmanCollectionGenerator(collection_name="Discovered API", embed_secrets=embed_secrets)
     postman_path = postman_gen.export_file(endpoints, auth, out_path)
     generated_files.append((postman_path, "Postman Collection v2.1.0"))
+
+    # 6. Markdown API Reference
+    md_gen = MarkdownDocGenerator(title="Discovered API Reference", embed_secrets=embed_secrets)
+    md_path = md_gen.export_file(endpoints, auth, out_path)
+    generated_files.append((md_path, "Human-readable Markdown API Reference"))
 
     # Summary Panel
     out_table = Table(title="📦 Generated Code & Artifacts", border_style="cyan")

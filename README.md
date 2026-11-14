@@ -27,6 +27,7 @@ DevTools "Save all as HAR"  ──►  gw analyze traffic.har  ──►  openap
                                                              client.ts        (fetch, zero deps)
                                                              mock_server.py   (FastAPI)
                                                              postman_collection.json
+                                                             API_REFERENCE.md (Markdown)
 ```
 
 Everything runs locally. No LLM, no API key, no traffic leaves your machine (except `gw call`, which replays a request on purpose).
