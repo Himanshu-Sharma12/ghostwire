@@ -21,6 +21,7 @@ from rich.syntax import Syntax
 from . import __version__
 from .core.analyzer import ReverseEngineeringEngine
 from .core.models import AuthInfo, EndpointModel
+from .core.sanitizer import HarSanitizer
 from .generators.markdown_doc import MarkdownDocGenerator
 from .generators.mock_server import MockServerGenerator
 from .generators.openapi import OpenApiGenerator
@@ -431,6 +432,55 @@ def call(
     except Exception as exc:
         console.print(f"[bold red]Request Error:[/bold red] {exc}")
         raise typer.Exit(code=1)
+
+
+@app.command()
+def sanitize(
+    har_file: str = typer.Argument(..., help="Path to raw .har capture file to sanitize"),
+    output: Optional[str] = typer.Option(None, "-o", "--output", help="Output file path (default: <filename>_sanitized.har)"),
+    drop_noise: bool = typer.Option(False, "--drop-noise", help="Drop tracker, analytics, and telemetry requests"),
+    domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Retain only transactions matching this domain")
+):
+    """
+    🛡️ Strip secrets, auth tokens, session cookies, and personal data from a HAR file.
+    """
+    print_banner()
+    check_files([har_file])
+
+    in_path = Path(har_file)
+    if output:
+        out_path = Path(output)
+    else:
+        out_path = in_path.with_name(f"{in_path.stem}_sanitized{in_path.suffix}")
+
+    target_domains = {domain.lower()} if domain else None
+    sanitizer = HarSanitizer(target_domains=target_domains)
+
+    try:
+        stats = sanitizer.sanitize_file(
+            input_path=in_path,
+            output_path=out_path,
+            filter_noise=drop_noise,
+            target_domains=target_domains
+        )
+    except Exception as exc:
+        console.print(f"[bold red]Sanitization Error:[/bold red] {exc}")
+        raise typer.Exit(code=1)
+
+    table = Table(title="🛡️ HAR Sanitization Summary", border_style="green")
+    table.add_column("Metric", style="cyan bold")
+    table.add_column("Count", style="white")
+
+    table.add_row("Total Captured Entries", str(stats["total_entries"]))
+    table.add_row("Retained Clean Entries", str(stats["retained_entries"]))
+    if drop_noise:
+        table.add_row("Scrubbed Noise / Trackers", str(stats["dropped_noise"]))
+    table.add_row("Sensitive Headers Masked", str(stats["headers_masked"]))
+    table.add_row("Session Cookies Scrubbed", str(stats["cookies_masked"]))
+    table.add_row("Payloads Sanitized", str(stats["payloads_sanitized"]))
+
+    console.print("\n", table, "\n")
+    console.print(f"✅ [bold green]Sanitized HAR written to:[/bold green] [bold cyan]{out_path}[/bold cyan]")
 
 
 @app.command()

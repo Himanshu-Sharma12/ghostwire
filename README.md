@@ -135,6 +135,13 @@ gw call traffic.har get_users_me      # send it and pretty-print the response
 
 `gw call` asks for confirmation before sending anything other than a GET; pass `--yes` to skip.
 
+**7. Sanitize a capture before sharing.**
+
+```bash
+gw sanitize traffic.har -o clean.har      # scrub tokens, cookies, auth headers, and passwords
+gw sanitize traffic.har --drop-noise      # also drop analytics, telemetry, and tracking noise
+```
+
 ## What it figures out
 
 | Problem | What GhostWire does |

@@ -6,6 +6,7 @@ from .cluster import PathClusterer
 from .filter import NoiseFilter
 from .models import AuthInfo, CapturedTransaction, EndpointModel, ParameterModel
 from .parser import HarParser
+from .sanitizer import HarSanitizer
 from .schema import SchemaEngine
 
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     "EndpointModel",
     "ParameterModel",
     "HarParser",
+    "HarSanitizer",
     "SchemaEngine"
 ]
